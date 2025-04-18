@@ -150,16 +150,22 @@ with tab1:
 with tab2:
     st.subheader("🔍 Analyze Public Instagram Post Link")
     post_link = st.text_input("Paste IG Post URL")
-    ig_user = st.text_input("Your Instagram Username", placeholder="For login (required)")
-    ig_pass = st.text_input("Your Instagram Password", type="password")
+    ig_user = st.text_input("Your Instagram Username (for session file)", placeholder="e.g. tommy")
 
-    if st.button("📥 Fetch & Analyze Post") and post_link and ig_user and ig_pass:
+    if st.button("📥 Fetch & Analyze Post") and post_link and ig_user:
         try:
             shortcode = post_link.strip("/").split("/")[-1]
             st.info(f"Extracted shortcode: `{shortcode}`")
 
             L = instaloader.Instaloader()
-            L.login(ig_user, ig_pass)
+
+            session_path = f"{ig_user}.session"
+            try:
+                L.load_session_from_file(ig_user, session_path)
+                st.success(f"Logged in using session file `{session_path}`")
+            except FileNotFoundError:
+                st.warning(f"")
+
             post = Post.from_shortcode(L.context, shortcode)
 
             caption = post.caption or ""
@@ -171,12 +177,10 @@ with tab2:
             post_date = post.date_utc
             weekday = post_date.strftime("%A")
             month = post_date.month
-            content_type = post.typename  # Possible: GraphImage, GraphVideo, GraphSidecar
-            followers = 5000  # Or estimate/default
-
+            content_type = post.typename
+            followers = 5000  # Can be improved by scraping profile info too
             location = post.location.name if post.location else "Unknown"
 
-            # Map Instagram typename to content_type
             if "Video" in content_type:
                 content_type = "Video"
             elif "Sidecar" in content_type:
@@ -184,12 +188,10 @@ with tab2:
             else:
                 content_type = "Reel"
 
-            # Encode categorical values
             cat_input = pd.DataFrame([[content_type, weekday, location]], columns=cat_cols)
             encoded_input = encoder.transform(cat_input)
             encoded_df = pd.DataFrame(encoded_input, columns=encoded_feature_names)
 
-            # Combine features
             input_df = pd.DataFrame([{
                 "caption_length": caption_len,
                 "hashtag_count": hashtag_count,
@@ -201,7 +203,6 @@ with tab2:
             }])
             final_input = pd.concat([input_df, encoded_df], axis=1)
 
-            # Predict
             predicted_likes = int(model_likes.predict(final_input)[0])
             predicted_comments = int(model_comments.predict(final_input)[0])
             engagement_rate = (predicted_likes / followers) * 100 if followers else 0
@@ -220,4 +221,4 @@ with tab2:
             st.info(f"📅 Based on your data, best day to post: **{best_day}**")
 
         except Exception as e:
-            st.error(f"❌ Failed to fetch post: {e}")
+            st.error(f"❌ Failed to fetch or analyze post: {e}")
