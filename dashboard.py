@@ -39,7 +39,7 @@ st.sidebar.button("🔒 Logout", on_click=lambda: st.session_state.update({"logg
 # --- Load and train models ---
 @st.cache_resource
 def load_models():
-    df = pd.read_csv("C:/Users/91861/OneDrive - KRZ Technologies/KRZ/KRZ Tasks/UEL/Mental wealth-Professional Life(Dissertation)/client1/Instagram - Posts.csv")
+    df = pd.read_csv("Instagram - Posts.csv")
     df = df.dropna(subset=["description", "likes", "followers", "date_posted", "content_type"])
 
     df["caption_length"] = df["description"].apply(len)
