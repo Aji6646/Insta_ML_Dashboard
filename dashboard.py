@@ -38,28 +38,57 @@ st.sidebar.button("🔒 Logout", on_click=lambda: st.session_state.update({"logg
 
 # --- Load and train models ---
 @st.cache_resource
+@st.cache_resource
 def load_models():
     df = pd.read_csv("Instagram - Posts.csv")
-    df = df.dropna(subset=["description", "likes", "followers", "date_posted", "content_type"])
 
+    # --- Drop rows with missing essential fields
+    df.dropna(subset=["description", "likes", "followers", "date_posted", "content_type"], inplace=True)
+
+    # --- Basic cleaning
+    df["description"] = df["description"].astype(str).str.strip()
     df["caption_length"] = df["description"].apply(len)
-    df["hashtag_count"] = df["hashtags"].apply(lambda x: len(eval(x)) if isinstance(x, str) else 0)
-    df["polarity"] = df["description"].apply(lambda x: TextBlob(str(x)).sentiment.polarity)
-    df["subjectivity"] = df["description"].apply(lambda x: TextBlob(str(x)).sentiment.subjectivity)
-    df["post_hour"] = pd.to_datetime(df["date_posted"]).dt.hour
-    df["weekday"] = pd.to_datetime(df["date_posted"]).dt.day_name()
-    df["month"] = pd.to_datetime(df["date_posted"]).dt.month
-    df["location"] = df["location"].fillna("Unknown")
 
+    # --- Safe parsing of hashtags
+    def safe_parse_hashtags(x):
+        try:
+            if isinstance(x, str):
+                return len(eval(x)) if x.startswith("[") else len(re.findall(r"#\w+", x))
+        except:
+            return 0
+        return 0
+    df["hashtag_count"] = df["hashtags"].apply(safe_parse_hashtags)
+
+    # --- Sentiment
+    df["polarity"] = df["description"].apply(lambda x: TextBlob(x).sentiment.polarity)
+    df["subjectivity"] = df["description"].apply(lambda x: TextBlob(x).sentiment.subjectivity)
+
+    # --- Date parsing
+    df["date_posted"] = pd.to_datetime(df["date_posted"], errors="coerce")
+    df.dropna(subset=["date_posted"], inplace=True)
+    df["post_hour"] = df["date_posted"].dt.hour
+    df["weekday"] = df["date_posted"].dt.day_name()
+    df["month"] = df["date_posted"].dt.month
+
+    # --- Clean location
+    df["location"] = df["location"].fillna("Unknown")
+    df["location"] = df["location"].replace("", "Unknown")
+
+    # --- Fill in numeric missing
+    df["num_comments"] = pd.to_numeric(df["num_comments"], errors="coerce").fillna(0)
+    df["followers"] = pd.to_numeric(df["followers"], errors="coerce").fillna(0)
+
+    # --- Handle categories
     categorical_cols = ["content_type", "weekday", "location"]
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
     encoded = encoder.fit_transform(df[categorical_cols])
     encoded_df = pd.DataFrame(encoded, columns=encoder.get_feature_names_out(categorical_cols), index=df.index)
 
+    # --- Features
     features = ["caption_length", "hashtag_count", "polarity", "subjectivity", "post_hour", "month", "followers"]
     X = pd.concat([df[features], encoded_df], axis=1)
     y_likes = df["likes"]
-    y_comments = df["num_comments"].fillna(0)
+    y_comments = df["num_comments"]
 
     model_likes = RandomForestRegressor(n_estimators=100, random_state=42)
     model_likes.fit(X, y_likes)
@@ -69,6 +98,7 @@ def load_models():
 
     best_day = df.groupby("weekday")["likes"].mean().idxmax()
     return model_likes, model_comments, encoder, encoder.get_feature_names_out(categorical_cols), categorical_cols, best_day
+
 
 model_likes, model_comments, encoder, encoded_feature_names, cat_cols, best_day = load_models()
 
